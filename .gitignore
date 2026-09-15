@@ -1,4 +1,3 @@
-warehouse.duckdb
 data/cleaned/
 __pycache__/
 *.pyc
