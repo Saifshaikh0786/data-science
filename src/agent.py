@@ -87,6 +87,16 @@ def _get_providers():
     groq_key = os.environ.get("GROQ_API_KEY")
     google_key = os.environ.get("GOOGLE_API_KEY")
 
+    if not groq_key or not google_key:
+        try:
+            import streamlit as _st
+            if not groq_key and hasattr(_st, "secrets") and "GROQ_API_KEY" in _st.secrets:
+                groq_key = _st.secrets["GROQ_API_KEY"]
+            if not google_key and hasattr(_st, "secrets") and "GOOGLE_API_KEY" in _st.secrets:
+                google_key = _st.secrets["GOOGLE_API_KEY"]
+        except Exception:
+            pass
+
     if groq_key:
         def call_groq(question):
             from openai import OpenAI

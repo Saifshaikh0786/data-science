@@ -17,6 +17,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Propagate Streamlit Cloud secrets to environment variables if present
+try:
+    for k, v in st.secrets.items():
+        if isinstance(v, str) and k not in os.environ:
+            os.environ[k] = v
+except Exception:
+    pass
+
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 DB_PATH = Path(__file__).parent / "warehouse.duckdb"
