@@ -1,0 +1,10 @@
+warehouse.duckdb
+data/cleaned/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+*.egg-info/
+dist/
+build/
+.streamlit/secrets.toml
