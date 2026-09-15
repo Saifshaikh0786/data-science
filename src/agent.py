@@ -1,7 +1,12 @@
 """
-Smol Agent — Section 7 of the build spec.
-Single-shot LLM call that generates SQL from natural language questions,
-with guardrails and keyword-based chart type override.
+Agentic Graph AI — Section 7 / Layer 4 (Bonus)
+Enterprise-grade NL → SQL → Chart agent with:
+  • Multi-provider LLM support (Groq primary, Google Gemini fallback)
+  • Automatic retry with provider failover
+  • SQL guardrails (dangerous DDL/DML rejected)
+  • DuckDB-aware schema context
+  • Keyword-based chart type override
+  • Rich narrative answer generation
 """
 
 import os
@@ -13,7 +18,7 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "warehouse.duckdb"
 
-# ── Schema context for the LLM ──
+# ── Schema context for the LLM ──────────────────────────────────────────────
 SCHEMA_PROMPT = """You are a SQL assistant for an agricultural supply chain data warehouse stored in DuckDB.
 You ONLY have access to these tables and columns — never invent a column or table name:
 
@@ -32,7 +37,7 @@ TABLE fact_transport:
 TABLE fact_weather_daily:
   date DATE, avg_temp_c DOUBLE, total_rainfall_mm DOUBLE, avg_humidity_pct DOUBLE
 
-IMPORTANT NOTES:
+IMPORTANT DOMAIN NOTES:
 - The 6 crops are: Wheat, Rice, Cotton, Sugarcane, Maize, Mustard
 - The 6 destinations are: WH-Central, WH-West, WH-South, WH-North, WH-East, Export-Terminal
 - Weather data is national daily aggregate only (no district column in fact_weather_daily)
@@ -40,6 +45,10 @@ IMPORTANT NOTES:
 - To find a mandi by name (e.g. "Amritsar mandi"), search dim_mandi.mandi_name ILIKE '%Amritsar%'
 - Use ILIKE for case-insensitive text matching
 - Dates are in the range of 2026 (synthetic data)
+- "arrivals" means quantity of produce arriving at mandis measured in Quintals (arrival_qtl)
+- "price crash" means modal_price < msp (below_msp = true)
+- "delay" means transit time exceeded 1.5x expected (is_delayed = true)
+- For "warehouse" questions, the warehouse is the destination in fact_transport
 
 DuckDB SQL RULES (CRITICAL — follow exactly):
 - DuckDB does NOT have width_bucket(). For distributions/histograms, use: FLOOR(column / bin_size) * bin_size AS bin
@@ -48,51 +57,76 @@ DuckDB SQL RULES (CRITICAL — follow exactly):
 - Use EXTRACT(DOW FROM date) for day-of-week
 - String aggregation: use STRING_AGG(column, ', ')
 - For LIMIT queries, use LIMIT N (not TOP N)
+- Use ROUND() for cleaner numeric output
 
 Reply with ONLY valid JSON (no markdown, no explanation outside JSON):
-{"sql": "YOUR SQL QUERY", "chart_type": "line|bar|scatter|table", "explanation": "brief explanation"}
+{"sql": "YOUR SQL QUERY", "chart_type": "line|bar|scatter|table", "explanation": "2-3 sentence business insight explaining the result"}
 """
 
-# ── Dangerous SQL patterns to reject ──
+# ── Dangerous SQL patterns to reject ─────────────────────────────────────────
 DANGEROUS_PATTERNS = re.compile(
-    r'\b(DROP|DELETE|UPDATE|INSERT|ATTACH|PRAGMA|CREATE|ALTER|TRUNCATE)\b|;--',
+    r'\b(DROP|DELETE|UPDATE|INSERT|ATTACH|PRAGMA|CREATE|ALTER|TRUNCATE|COPY|EXPORT|IMPORT)\b|;--|\/\*',
     re.IGNORECASE
 )
 
-# ── Keyword → chart_type overrides ──
+# ── Keyword → chart_type overrides ───────────────────────────────────────────
 CHART_OVERRIDES = [
-    (r'trend|over time|daily|monthly|weekly', 'line'),
-    (r'compare|top|vs|versus|ranking', 'bar'),
-    (r'relationship|correlation|corr', 'scatter'),
-    (r'distribution|spread|histogram', 'bar'),
+    (r'trend|over time|daily|monthly|weekly|timeline', 'line'),
+    (r'compare|top|vs|versus|ranking|rank|highest|lowest|best|worst', 'bar'),
+    (r'relationship|correlation|corr|impact|effect', 'scatter'),
+    (r'distribution|spread|histogram|range', 'bar'),
+    (r'share|proportion|percentage|breakdown|composition', 'bar'),
+    (r'flow|route|path', 'bar'),
 ]
 
 
-def get_llm_client():
-    """Get an OpenAI-compatible client (Groq primary, Google fallback)."""
+def _get_providers():
+    """Return a list of (provider_name, call_fn) tuples in priority order."""
+    providers = []
+
     groq_key = os.environ.get("GROQ_API_KEY")
     google_key = os.environ.get("GOOGLE_API_KEY")
 
     if groq_key:
-        try:
+        def call_groq(question):
             from openai import OpenAI
-            client = OpenAI(
-                api_key=groq_key,
-                base_url="https://api.groq.com/openai/v1"
+            client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            resp = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "system", "content": SCHEMA_PROMPT},
+                    {"role": "user", "content": question}
+                ],
+                temperature=0.1,
+                max_tokens=1024,
             )
-            return client, "openai/gpt-oss-120b"
-        except Exception:
-            pass
+            return resp.choices[0].message.content
+        providers.append(("Groq/gpt-oss-120b", call_groq))
 
     if google_key:
-        try:
+        def call_google(question):
             import google.generativeai as genai
             genai.configure(api_key=google_key)
-            return "google", "gemini-2.0-flash"
-        except Exception:
-            pass
+            model = genai.GenerativeModel("gemini-2.0-flash")
+            resp = model.generate_content(f"{SCHEMA_PROMPT}\n\nUser question: {question}")
+            return resp.text
+        providers.append(("Google/Gemini-2.0-Flash", call_google))
 
-    return None, None
+    return providers
+
+
+def _parse_llm_json(raw: str):
+    """Extract JSON from LLM response, handling markdown fences and edge cases."""
+    cleaned = raw.strip()
+    # Strip markdown code fences
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+    # Try to find JSON object if there's surrounding text
+    match = re.search(r'\{[^{}]*"sql"[^{}]*\}', cleaned, re.DOTALL)
+    if match:
+        cleaned = match.group(0)
+    return json.loads(cleaned)
 
 
 def ask_agent(question: str):
@@ -102,84 +136,74 @@ def ask_agent(question: str):
 
     Returns dict: {answer_text, chart_type, sql, dataframe, error}
     """
-    client, model = get_llm_client()
+    providers = _get_providers()
 
-    if client is None:
+    if not providers:
         return {
-            "answer_text": "⚠️ No API key configured. Set GROQ_API_KEY or GOOGLE_API_KEY in your environment.",
+            "answer_text": "⚠️ No API key configured. Set GROQ_API_KEY or GOOGLE_API_KEY in .env",
             "chart_type": "table",
             "sql": None,
             "dataframe": None,
             "error": "no_api_key"
         }
 
-    # ── Call the LLM ──
-    try:
-        if client == "google":
-            import google.generativeai as genai
-            gmodel = genai.GenerativeModel(model)
-            response = gmodel.generate_content(
-                f"{SCHEMA_PROMPT}\n\nUser question: {question}"
-            )
-            raw_response = response.text
-        else:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SCHEMA_PROMPT},
-                    {"role": "user", "content": question}
-                ],
-                temperature=0.1,
-                max_tokens=1024,
-            )
-            raw_response = response.choices[0].message.content
-    except Exception as e:
+    # ── Try each provider with retry ─────────────────────────────────────
+    last_error = None
+    raw_response = None
+
+    for provider_name, call_fn in providers:
+        for attempt in range(2):  # 2 attempts per provider
+            try:
+                raw_response = call_fn(question)
+                break  # success
+            except Exception as e:
+                last_error = f"{provider_name} attempt {attempt+1}: {str(e)}"
+                continue
+        if raw_response:
+            break
+
+    if raw_response is None:
         return {
-            "answer_text": f"⚠️ LLM API error: {str(e)}",
+            "answer_text": f"⚠️ All LLM providers failed.\n\nLast error: {last_error}",
             "chart_type": "table",
             "sql": None,
             "dataframe": None,
-            "error": str(e)
+            "error": last_error
         }
 
-    # ── Parse JSON response ──
+    # ── Parse JSON response ──────────────────────────────────────────────
     try:
-        # Strip markdown code fences if present
-        cleaned = raw_response.strip()
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
-            cleaned = re.sub(r'\s*```$', '', cleaned)
-        parsed = json.loads(cleaned)
+        parsed = _parse_llm_json(raw_response)
         sql = parsed.get("sql", "")
         chart_type = parsed.get("chart_type", "table")
         explanation = parsed.get("explanation", "")
     except (json.JSONDecodeError, KeyError) as e:
         return {
-            "answer_text": f"⚠️ Could not parse LLM response as JSON.\n\nRaw response:\n{raw_response}",
+            "answer_text": f"⚠️ Could not parse LLM response.\n\nRaw:\n{raw_response[:500]}",
             "chart_type": "table",
             "sql": None,
             "dataframe": None,
             "error": f"json_parse_error: {e}"
         }
 
-    # ── Guardrail: reject dangerous SQL ──
+    # ── Guardrail: reject dangerous SQL ──────────────────────────────────
     if DANGEROUS_PATTERNS.search(sql):
         return {
-            "answer_text": "🚫 The generated SQL contains potentially dangerous operations and was rejected.",
+            "answer_text": "🚫 Generated SQL contains dangerous operations (DDL/DML) and was rejected for safety.",
             "chart_type": "table",
             "sql": sql,
             "dataframe": None,
             "error": "dangerous_sql"
         }
 
-    # ── Keyword safety net: override chart_type if needed ──
+    # ── Keyword override for chart type ──────────────────────────────────
     q_lower = question.lower()
     for pattern, override in CHART_OVERRIDES:
         if re.search(pattern, q_lower):
             chart_type = override
             break
 
-    # ── Execute SQL ──
+    # ── Execute SQL on DuckDB ────────────────────────────────────────────
     try:
         con = duckdb.connect(str(DB_PATH), read_only=True)
         df = con.execute(sql).fetchdf()
@@ -193,8 +217,28 @@ def ask_agent(question: str):
             "error": str(e)
         }
 
+    # ── Build rich answer text ───────────────────────────────────────────
+    answer_parts = []
+    if explanation:
+        answer_parts.append(explanation)
+
+    # Add data summary
+    if df is not None and not df.empty:
+        rows, cols = df.shape
+        answer_parts.append(f"📊 **Result:** {rows} row{'s' if rows != 1 else ''}, {cols} column{'s' if cols != 1 else ''}")
+
+        # Auto-summarize if small result
+        if rows == 1 and cols <= 3:
+            vals = [f"**{c}**: {df.iloc[0][c]}" for c in df.columns]
+            answer_parts.append(" · ".join(vals))
+        elif rows <= 6 and cols == 2:
+            # Compact summary for small multi-row results
+            col0, col1 = df.columns[0], df.columns[1]
+            top_val = df.iloc[0]
+            answer_parts.append(f"🏆 Top: **{top_val[col0]}** = {top_val[col1]}")
+
     return {
-        "answer_text": explanation,
+        "answer_text": "\n\n".join(answer_parts) if answer_parts else "Query executed successfully.",
         "chart_type": chart_type,
         "sql": sql,
         "dataframe": df,

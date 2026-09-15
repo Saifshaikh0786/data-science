@@ -1,7 +1,48 @@
 # 🌾 Mandi-to-Market Supply Chain Optimizer
 
-> **TransOrg AgentIQ Datathon** · Agriculture & FoodTech Track  
-> An intelligent agricultural supply chain analytics platform that transforms messy mandi data into actionable price discovery, logistics optimization, and weather impact insights.
+> **TransOrg AgentIQ Datathon 2026** · Agriculture & FoodTech Track  
+> An enterprise-grade agricultural supply chain intelligence platform — from raw messy data to agentic AI insights.
+
+---
+
+## 🏆 How We Satisfy All 4 Challenge Layers
+
+| Layer | Requirement | Our Implementation |
+|:---:|---|---|
+| **1** | Data Rescue | `src/clean.py` — 5 files, 30+ transformations, full QA audit trail |
+| **2** | Analytics Layer | `src/build_warehouse.py` — DuckDB star schema, 9 business metrics |
+| **3** | Executive Dashboard | `app.py` — 10-page Streamlit dashboard with premium UI |
+| **4 ★** | Agentic Graph AI | `src/agent.py` — NL→SQL→Chart with Groq+Gemini, 6/6 tests pass |
+
+---
+
+## ✨ Unique Features (What Sets Us Apart)
+
+### 📡 Farmer Advisory System
+Answers the core question every farmer has: **"Where should I sell my crop today?"**
+- Ranks all mandis by today's modal price for any selected crop
+- Shows MSP gap (profitable vs. distress sale), exact ₹ savings vs worst mandi
+- 7-day price history for top 3 mandis
+
+### 🌐 Supply Chain Sankey Flow
+- Visual flow diagram from mandi districts → destination warehouses
+- Shows trip volume on each route — instantly identifies bottlenecks
+
+### 🔥 Price Volatility Heatmap
+- Crop × Month coefficient of variation matrix
+- Identifies the riskiest crop-season combinations for policy intervention
+- Box plot distribution for outlier detection
+
+### 📈 Arbitrage Explorer
+- Cross-mandi price spread on any given crop + date
+- Instantly shows best buying mandi, worst mandi, and ₹/Qtl opportunity
+
+### 🤖 AI Agent with Dual LLM Fallback
+- **Primary:** Groq `gpt-oss-120b` (ultra-fast inference)
+- **Fallback:** Google `Gemini-2.0-Flash` (if Groq is unavailable)
+- SQL guardrails reject dangerous DDL/DML operations
+- DuckDB-aware prompt prevents use of unsupported functions
+- Auto-selects chart type (line/bar/scatter/table) from question keywords
 
 ---
 
@@ -9,186 +50,184 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        STREAMLIT DASHBOARD                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │Executive │ │Price &   │ │Arbitrage │ │Transport │ │Weather   │ │
-│  │Overview  │ │MSP Watch │ │Explorer  │ │Logistics │ │Impact    │ │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
-│  ┌──────────────────────┐  ┌───────────────────────────────────┐   │
-│  │ Data Quality &       │  │ 🤖 AI Agent (NL → SQL → Chart)  │   │
-│  │ Governance Dashboard │  │ Groq/Google LLM + SQL Guardrails │   │
-│  └──────────────────────┘  └───────────────────────────────────┘   │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │ SQL Queries
-                         ┌────────▼────────┐
-                         │   DuckDB        │
-                         │   Warehouse     │
-                         │ ┌─────────────┐ │
-                         │ │ dim_mandi   │ │
-                         │ │ fact_arrive │ │
-                         │ │ fact_prices │ │
-                         │ │ fact_transp │ │
-                         │ │ fact_weather│ │
-                         │ └─────────────┘ │
-                         └────────▲────────┘
-                                  │ Load cleaned parquet
-                   ┌──────────────┴──────────────┐
-                   │   DATA CLEANING PIPELINE    │
-                   │   (src/clean.py)             │
-                   │                              │
-                   │  • Mandi ID Canonicalization │
-                   │  • Crop Name Normalization   │
-                   │  • Unit Conversion (→ Qtl)   │
-                   │  • Price String Parsing      │
-                   │  • Messy Date Parsing        │
-                   │  • Timezone Normalization    │
-                   │  • Quality Flag Generation   │
-                   └──────────────▲───────────────┘
-                                  │
-                   ┌──────────────┴──────────────┐
-                   │   RAW DATA (5 files)         │
-                   │   CSV, JSON, XLSX            │
-                   └──────────────────────────────┘
+│                     10-PAGE STREAMLIT DASHBOARD                     │
+│  Executive Overview  │  Price & MSP Watch  │  Arbitrage Explorer   │
+│  Farmer Advisory ★  │  Supply Chain Flow ★ │  Price Volatility ★  │
+│  Transport Logistics │  Weather Impact     │  Data Quality          │
+│                     🤖 AI Agent (Layer 4)                          │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │ DuckDB SQL
+                     ┌────────▼────────┐
+                     │  warehouse.duckdb │
+                     │  ┌─────────────┐ │
+                     │  │ dim_mandi   │ │  57 rows
+                     │  │ fact_arrive │ │  25,750 rows
+                     │  │ fact_prices │ │  12,000 rows
+                     │  │ fact_transp │ │  10,400 rows
+                     │  │ fact_weather│ │  252 daily agg
+                     │  └─────────────┘ │
+                     └────────▲────────┘
+                              │ Parquet load
+               ┌──────────────┴──────────────┐
+               │   src/clean.py               │
+               │   Data Cleaning Pipeline     │
+               └──────────────▲───────────────┘
+                              │
+               ┌──────────────┴──────────────┐
+               │   data/raw/ (5 files)        │
+               │   CSV · JSON · XLSX          │
+               └─────────────────────────────┘
 ```
 
-## 📊 Data Model
+---
 
-| Table | Type | Description |
-|---|---|---|
-| `dim_mandi` | Dimension | 57 unique mandis with district, state, type |
-| `fact_arrivals` | Fact | 25,750 daily crop arrival records (normalized to Quintals) |
-| `fact_prices` | Fact | 12,000 price records with MSP comparison |
-| `fact_transport` | Fact | 10,400 truck trip records with delay detection |
-| `fact_weather_daily` | Fact | National daily weather aggregate |
+## 📊 Data Cleaning — What We Fixed
 
-### Key Business Metrics
-1. **Total crop arrivals** by crop and mandi
-2. **Average modal price vs MSP** gap analysis
-3. **Price crash detection** (modal price < MSP)
-4. **Transit delay rate** by destination warehouse
-5. **Weather-arrival correlation** (rainfall impact on supply)
-6. **Price arbitrage score** — the hero metric for farmer decision support
+| Table | Raw Rows | Final Rows | Key Transformations |
+|---|---|---|---|
+| dim_mandi | 60 | 57 | 3 exact duplicates removed; 36 mandi_id format variants → canonical `MANDIXXX`; state backfilled from district lookup |
+| fact_arrivals | 25,750 | 25,750 | 36 crop name variants → 6 canonical; 1,261 negative quantities corrected (abs); 484 missing arrival_ids generated |
+| fact_prices | 12,000 | 12,000 | Currency strings (`₹`, `Rs`, `INR`) stripped; 3,667 below-MSP events flagged |
+| fact_transport | 10,400 | 10,400 | 1,440 transit hours recomputed from timestamps; 1,553 miles→km conversions; 81 delayed trips flagged |
+| fact_weather_daily | 15,000 | 252 | 715 UNKNOWN sensors excluded; 1,484 bad timestamps dropped; 1,281 negative rainfalls clipped; aggregated to national daily |
 
-## 🧹 Data Cleaning Highlights
+### Documented Assumptions (10 Total)
+1. Missing quantity unit → Quintal (India convention, most common ~70%)
+2. Negative arrivals → abs() (physical impossibility, sign-entry error)
+3. Missing distance_unit → km (majority case)
+4. Temperature > 50 with no unit → Fahrenheit → converted to °C
+5. Negative rainfall → clip to 0 (physically impossible)
+6. Ambiguous DD/MM date → dayfirst=True (India convention)
+7. No timezone suffix → IST (India-based dataset)
+8. Weather → national daily aggregate (no sensor-district mapping provided)
+9. Delay threshold: transit > 1.5× (distance / 40 km/h)
+10. mandi_name ≠ geography (names are randomized flavor text in this dataset)
 
-The raw data is deliberately messy. Our pipeline handles:
+---
 
-- **36 crop name variants** (English/Hindi/Punjabi/Unicode) → 6 canonical crops
-- **8+ mandi_id formats** → standardized `MANDIXXX`
-- **Mixed quantity units** (KG, Qtl, Tonnes) → all normalized to Quintals
-- **Currency-embedded price strings** (`₹6,944.79`, `Rs. 1,857`, `INR 2,183`) → clean floats
-- **12+ date/time formats** with mixed DD/MM vs MM/DD, IST/UTC timezones
-- **Negative values** in arrivals (abs), rainfall (clip to 0), transit hours (recompute)
-- **Temperature unit detection** including embedded units in values (`"39.8°C"`)
-- **Full QA audit trail** — every transformation is logged with row counts
+## 📈 Business Metrics Delivered
+
+| Metric | Value |
+|---|---|
+| Total national arrivals | 6,417,738 Qtl |
+| Avg modal price vs MSP gap | +₹82.59/Qtl |
+| Price crash instances (below MSP) | 3,667 |
+| Transport delay rate | 0.8% |
+| Active mandis | 57 |
+| Join success rate (arrivals) | 100% |
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- A free API key from [Groq](https://console.groq.com) (for the AI Agent)
-
-### Setup
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/mandi-supply-chain-optimizer.git
-cd mandi-supply-chain-optimizer
-
-# 2. Install dependencies
+```powershell
 pip install -r requirements.txt
+```
 
-# 3. Set up environment variables
-cp .env.example .env
-# Edit .env and add your GROQ_API_KEY
-
-# 4. Run the data cleaning pipeline
+### 1. Run the cleaning pipeline
+```powershell
 python src/clean.py
+```
 
-# 5. Build the DuckDB warehouse
+### 2. Build the warehouse
+```powershell
 python src/build_warehouse.py
+```
 
-# 6. Launch the dashboard
+### 3. Launch the dashboard
+```powershell
 streamlit run app.py
 ```
+Dashboard opens at **http://localhost:8501**
 
-The dashboard will open at `http://localhost:8501`.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | For AI Agent | Free key from [console.groq.com](https://console.groq.com) |
-| `GOOGLE_API_KEY` | Optional fallback | Free key from [aistudio.google.com](https://aistudio.google.com) |
-
-## 📱 Dashboard Pages
-
-### 1. Executive Overview
-KPI cards (total arrivals, avg price-MSP gap, crash count, delay rate), daily arrival trend, crop-wise distribution, top mandis.
-
-### 2. Price & MSP Watch
-Modal price vs MSP comparison by crop, price trend over time, table of mandis currently below MSP.
-
-### 3. Arbitrage Explorer ⭐
-**The hero feature** — select a crop + date to see mandis ranked by price. Instantly identifies where a farmer should sell for the best price. Displays price spread, best/worst prices, and MSP status.
-
-### 4. Transport & Logistics
-Average transit time and delay rate by destination warehouse, worst-delay routes, distance distribution.
-
-### 5. Weather Impact
-National daily rainfall vs arrivals overlay, temperature trend, rainfall-arrival scatter plot with Pearson correlation coefficient.
-
-### 6. Data Quality & Governance
-Full transparency: before/after row counts, join success rates, data quality flags, all 10 documented assumptions with justification.
-
-### 7. AI Agent 🤖
-Natural language query interface powered by LLM (Groq). Ask questions like:
-- "Show total arrivals by crop type"
-- "Which warehouse receives the highest volume of crops?"
-- "Show the distribution of wholesale prices for Rice"
-
-SQL is generated, validated (dangerous patterns rejected), executed, and auto-visualized.
-
-## 🔒 Design Decisions
-
-| Decision | Rationale |
-|---|---|
-| **DuckDB (in-process)** | Zero infrastructure, fast analytical queries, perfect for single-machine datathon |
-| **Natural keys (no surrogates)** | Faster to build; `mandi_id` is already a clean PK after canonicalization |
-| **National weather aggregate only** | No sensor→district mapping exists; presenting district-level weather as ground truth would be dishonest |
-| **Single-shot LLM agent** | Simpler, more reliable, cheaper than multi-step agent loops for this scope |
-| **Delay threshold: 1.5× expected** | 40 km/h avg truck speed is a documented, defensible assumption |
-| **mandi_name NOT used for geography** | Names are randomized in this synthetic dataset — only district/state columns are reliable |
-
-## 📂 Repository Structure
-
-```
-mandi-supply-chain-optimizer/
-├── README.md                     # This file
-├── requirements.txt              # Python dependencies
-├── .env.example                  # API key template
-├── .gitignore
-├── data/
-│   └── raw/                      # Original 5 dataset files
-├── src/
-│   ├── utils.py                  # Shared parsers (dates, IDs, crops, prices)
-│   ├── clean.py                  # Data cleaning pipeline
-│   ├── build_warehouse.py        # DuckDB warehouse builder
-│   ├── metrics.sql               # Business metric queries (Section 5)
-│   └── agent.py                  # AI agent (NL → SQL → Chart)
-├── app.py                        # Streamlit dashboard
-├── reports/
-│   └── data_quality_report.md    # Auto-generated QA report
-└── warehouse.duckdb              # Generated (gitignored, rebuild via scripts)
+### 4. Configure AI Agent (optional but recommended)
+```powershell
+# Copy template
+copy .env.example .env
+# Edit .env and add your Groq key (free at https://console.groq.com)
+# GROQ_API_KEY=gsk_your_key_here
 ```
 
-## ⚖️ Compliance
-
-- ✅ No external datasets used — only the provided 5 files
-- ✅ No paid API keys required (Groq free tier)
-- ✅ Full data quality report with every assumption documented
-- ✅ Reproducible pipeline: `clean.py` → `build_warehouse.py` → `streamlit run app.py`
+### 5. Run acceptance tests
+```powershell
+python test_agent.py   # All 6/6 pass
+```
 
 ---
 
-*Built for the TransOrg AgentIQ Datathon — Agriculture & FoodTech Track*
+## 🤖 AI Agent — How It Works
+
+```
+User question (natural language)
+        ↓
+Keyword analysis → chart_type hint (line/bar/scatter/table)
+        ↓
+LLM call (Groq primary → Google Gemini fallback)
+  [Schema context + DuckDB SQL rules injected]
+        ↓
+JSON parse → {sql, chart_type, explanation}
+        ↓
+SQL Guardrail (DROP/DELETE/UPDATE → rejected)
+        ↓
+DuckDB execution → DataFrame
+        ↓
+Plotly chart + data table rendered in Streamlit
+```
+
+**Acceptance Test Results (Section 7):**
+| # | Question | Status | Chart |
+|:---:|---|:---:|---|
+| 1 | Show total arrivals by crop type | ✅ PASS | Bar |
+| 2 | Which mandi has the highest average transit delay? | ✅ PASS | Bar |
+| 3 | Show the distribution of wholesale prices for Rice | ✅ PASS | Bar |
+| 4 | Which warehouse receives the highest volume of crops? | ✅ PASS | Bar |
+| 5 | Plot the daily arrival trend of Wheat | ✅ PASS | Line |
+| 6 | Compare average modal price vs MSP for each crop | ✅ PASS | Bar |
+
+---
+
+## 📁 Project Structure
+
+```
+mandi-supply-chain-optimizer/
+├── app.py                      # 10-page Streamlit dashboard
+├── requirements.txt            # All Python dependencies
+├── .env.example                # API key template (copy → .env)
+├── test_agent.py               # 6-question acceptance test suite
+│
+├── src/
+│   ├── agent.py                # NL→SQL→Chart AI Agent
+│   ├── clean.py                # Data cleaning pipeline
+│   ├── build_warehouse.py      # DuckDB warehouse builder
+│   ├── metrics.sql             # Business metric queries
+│   └── utils.py                # Shared parsers & utilities
+│
+├── data/
+│   └── raw/                    # Original 5 messy input files
+│       ├── track3_mandi_master.csv
+│       ├── track3_mandi_arrivals.csv
+│       ├── track3_price_and_msp.json
+│       ├── track3_transport_logistics.csv
+│       └── track3_weather_sensors.xlsx
+│
+└── reports/
+    └── data_quality_report.md  # Auto-generated QA report
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
+|---|---|
+| Data Cleaning | Python, Pandas, python-dateutil |
+| Data Warehouse | DuckDB (in-process analytical DB) |
+| Serialization | Apache Parquet (via PyArrow) |
+| Dashboard | Streamlit + Plotly |
+| AI Agent | OpenAI-compatible API (Groq + Google Gemini) |
+| LLM Models | Groq `openai/gpt-oss-120b` · Google `gemini-2.0-flash` |
+
+---
+
+*Built for TransOrg AgentIQ Datathon 2026 — Agriculture & FoodTech Track*
