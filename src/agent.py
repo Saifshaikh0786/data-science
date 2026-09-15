@@ -41,6 +41,14 @@ IMPORTANT NOTES:
 - Use ILIKE for case-insensitive text matching
 - Dates are in the range of 2026 (synthetic data)
 
+DuckDB SQL RULES (CRITICAL — follow exactly):
+- DuckDB does NOT have width_bucket(). For distributions/histograms, use: FLOOR(column / bin_size) * bin_size AS bin
+- DuckDB does NOT have MEDIAN(). Use PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY column) instead
+- Use DATE_TRUNC('month', date) for monthly aggregation
+- Use EXTRACT(DOW FROM date) for day-of-week
+- String aggregation: use STRING_AGG(column, ', ')
+- For LIMIT queries, use LIMIT N (not TOP N)
+
 Reply with ONLY valid JSON (no markdown, no explanation outside JSON):
 {"sql": "YOUR SQL QUERY", "chart_type": "line|bar|scatter|table", "explanation": "brief explanation"}
 """
